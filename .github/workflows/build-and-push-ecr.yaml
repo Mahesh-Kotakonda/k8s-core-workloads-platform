@@ -2,17 +2,13 @@ name: Build and Push Docker Images to ECR
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
     paths:
       - app/frontend/**
       - app/backend/**
   workflow_dispatch:
 
 jobs:
-  # ----------------------------
-  # DETECT CHANGES
-  # ----------------------------
   detect-changes:
     runs-on: [self-hosted, ci]
     outputs:
@@ -21,32 +17,24 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - id: filter
         uses: dorny/paths-filter@v3
         with:
           filters: |
             frontend:
-              - 'app/frontend/**'
+              - app/frontend/**
             backend:
-              - 'app/backend/**'
+              - app/backend/**
 
-  # ----------------------------
-  # BUILD BACKEND
-  # ----------------------------
   build-backend:
     needs: detect-changes
     runs-on: [self-hosted, ci]
-
     outputs:
-      image: ${{ steps.output.outputs.image }}
+      image: ${{ steps.out.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
-
-      # Always initialize output (CRITICAL)
-      - name: Initialize backend image output
-        id: output
+      - id: out
         run: echo "image=" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
@@ -55,10 +43,8 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & push backend image
-        if: |
-          github.event_name == 'workflow_dispatch' ||
-          needs.detect-changes.outputs.backend == 'true'
+      - name: Build backend
+        if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.backend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
           docker build -t backend:${{ github.sha }} app/backend
@@ -66,22 +52,15 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-  # ----------------------------
-  # BUILD FRONTEND
-  # ----------------------------
   build-frontend:
     needs: detect-changes
     runs-on: [self-hosted, ci]
-
     outputs:
-      image: ${{ steps.output.outputs.image }}
+      image: ${{ steps.out.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
-
-      # Always initialize output (CRITICAL)
-      - name: Initialize frontend image output
-        id: output
+      - id: out
         run: echo "image=" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
@@ -90,10 +69,8 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & push frontend image
-        if: |
-          github.event_name == 'workflow_dispatch' ||
-          needs.detect-changes.outputs.frontend == 'true'
+      - name: Build frontend
+        if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.frontend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
           docker build -t frontend:${{ github.sha }} app/frontend
@@ -102,17 +79,38 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   # ----------------------------
-  # DEPLOY
+  # TRIGGER DEPLOYMENT
   # ----------------------------
-  deploy:
-    needs:
-      - build-backend
-      - build-frontend
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      needs.build-backend.outputs.image != '' ||
-      needs.build-frontend.outputs.image != ''
-    uses: ./.github/workflows/deploy-to-k8s.yaml
-    with:
-      backend_image: ${{ needs.build-backend.outputs.image }}
-      frontend_image: ${{ needs.build-frontend.outputs.image }}
+  trigger-deployment:
+    needs: [build-backend, build-frontend]
+    runs-on: [self-hosted, ci]
+    if: always()
+
+    steps:
+      - name: Build deployment payload
+        id: payload
+        run: |
+          images=()
+
+          [[ -n "${{ needs.build-backend.outputs.image }}" ]] && \
+            images+=("\"backend_image\":\"${{ needs.build-backend.outputs.image }}\"")
+
+          [[ -n "${{ needs.build-frontend.outputs.image }}" ]] && \
+            images+=("\"frontend_image\":\"${{ needs.build-frontend.outputs.image }}\"")
+
+          if [[ ${#images[@]} -eq 0 ]]; then
+            echo "has_images=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          joined=$(IFS=,; echo "${images[*]}")
+          echo "payload={\"ref\":\"$GITHUB_REF\",$joined}" >> "$GITHUB_OUTPUT"
+          echo "has_images=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger deployment
+        if: steps.payload.outputs.has_images == 'true'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy-to-k8s
+          client-payload: ${{ steps.payload.outputs.payload }}
