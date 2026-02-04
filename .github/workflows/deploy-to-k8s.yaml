@@ -1,0 +1,42 @@
+name: Deploy to Kubernetes
+
+on:
+  workflow_call:
+    inputs:
+      frontend_image:
+        required: false
+        type: string
+      backend_image:
+        required: false
+        type: string
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure kubeconfig
+        run: |
+          # kubeconfig already present on runner
+          kubectl version --client
+
+      - name: Deploy Backend (Blue/Green)
+        if: ${{ inputs.backend_image != '' }}
+        run: |
+          echo "Deploying backend image: ${{ inputs.backend_image }}"
+
+          kubectl set image deployment/backend-green \
+            backend=${{ inputs.backend_image }} \
+            -n dev
+
+      - name: Deploy Frontend (Canary)
+        if: ${{ inputs.frontend_image != '' }}
+        run: |
+          echo "Deploying frontend image: ${{ inputs.frontend_image }}"
+
+          kubectl set image deployment/frontend-v2 \
+            frontend=${{ inputs.frontend_image }} \
+            -n dev
