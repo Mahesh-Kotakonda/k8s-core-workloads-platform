@@ -5,26 +5,68 @@ metadata:
   namespace: dev
   labels:
     app: backend
-    version: green
+    color: green
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: backend
-      version: green
+      color: green
   template:
     metadata:
       labels:
         app: backend
-        version: green
+        color: green
     spec:
+
+      initContainers:
+        - name: init-check
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "Initializing backend in $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+              sleep 5
+
       containers:
         - name: backend
-          image: PLACEHOLDER_BACKEND_IMAGE
+          image: BACKEND_IMAGE
           ports:
             - containerPort: 3000
+
           env:
-            - name: BACKEND_VERSION
-              value: "green"
             - name: ENVIRONMENT
-              value: "dev"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            - name: BACKEND_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['color']
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+        - name: logging-sidecar
+          image: busybox
+          command: ["sh", "-c", "tail -F /var/log/app.log"]
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+
+      volumes:
+        - name: logs
+          emptyDir: {}
