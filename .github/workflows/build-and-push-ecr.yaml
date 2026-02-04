@@ -4,17 +4,53 @@ on:
   push:
     branches:
       - main
+    paths:
+      - app/frontend/**
+      - app/backend/**
   workflow_dispatch:
 
 jobs:
-  build-and-push:
-    runs-on: self-hosted
+  # ----------------------------
+  # DETECT CHANGES (PATH FILTER)
+  # ----------------------------
+  detect-changes:
+    runs-on: [self-hosted, ci]
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
 
     steps:
-      - name: Checkout source code
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (IAM Role)
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            frontend:
+              - 'app/frontend/**'
+            backend:
+              - 'app/backend/**'
+
+  # ----------------------------
+  # BUILD & PUSH BACKEND IMAGE
+  # ----------------------------
+  build-backend:
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.backend == 'true'
+    runs-on: [self-hosted, ci]
+
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (IAM role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
@@ -22,14 +58,64 @@ jobs:
       - name: Login to Amazon ECR
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push BACKEND image
+      - name: Build and push backend image
+        id: push
         run: |
-          docker build -t backend:${{ github.sha }} app/backend
-          docker tag backend:${{ github.sha }} ${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}
-          docker push ${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}
+          IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
 
-      - name: Build and push FRONTEND image
+          docker build -t backend:${{ github.sha }} app/backend
+          docker tag backend:${{ github.sha }} $IMAGE
+          docker push $IMAGE
+
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+  # ----------------------------
+  # BUILD & PUSH FRONTEND IMAGE
+  # ----------------------------
+  build-frontend:
+    needs: detect-changes
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.frontend == 'true'
+    runs-on: [self-hosted, ci]
+
+    outputs:
+      image: ${{ steps.push.outputs.image }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (IAM role)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push frontend image
+        id: push
         run: |
+          IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
+
           docker build -t frontend:${{ github.sha }} app/frontend
-          docker tag frontend:${{ github.sha }} ${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}
-          docker push ${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}
+          docker tag frontend:${{ github.sha }} $IMAGE
+          docker push $IMAGE
+
+          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+
+  # ----------------------------
+  # CALL DEPLOYMENT WORKFLOW
+  # ----------------------------
+  deploy:
+    needs:
+      - build-backend
+      - build-frontend
+    if: |
+      needs.build-backend.result == 'success' ||
+      needs.build-frontend.result == 'success'
+    uses: ./.github/workflows/deploy-to-k8s.yaml
+    with:
+      backend_image: ${{ needs.build-backend.outputs.image }}
+      frontend_image: ${{ needs.build-frontend.outputs.image }}
