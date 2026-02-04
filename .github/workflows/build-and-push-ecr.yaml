@@ -60,8 +60,6 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-    needs:
-      - detect-changes
 
   # ----------------------------
   # BUILD FRONTEND
@@ -92,8 +90,6 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-    needs:
-      - detect-changes
 
   # ----------------------------
   # TRIGGER DEPLOYMENT
