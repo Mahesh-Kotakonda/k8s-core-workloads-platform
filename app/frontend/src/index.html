@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Kubernetes Core Workloads Demo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background-color: #f4f4f4;
+      padding: 40px;
+    }
+    .card {
+      background: white;
+      padding: 20px;
+      max-width: 600px;
+      margin: auto;
+      border-radius: 8px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    .version {
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <h1>Kubernetes Core Workloads Demo</h1>
+
+  <p><span class="version">Environment:</span> <span id="env"></span></p>
+  <p><span class="version">Frontend Version:</span> <span id="frontend"></span></p>
+  <p><span class="version">Backend Version:</span> <span id="backend"></span></p>
+
+  <h3>Backend Message</h3>
+  <pre id="message">Loading...</pre>
+</div>
+
+<script src="env.js"></script>
+<script>
+  document.getElementById("env").innerText = ENVIRONMENT;
+  document.getElementById("frontend").innerText = FRONTEND_VERSION;
+
+  fetch("/api/message")
+    .then(response => response.json())
+    .then(data => {
+      document.getElementById("backend").innerText = data.backend_version;
+      document.getElementById("message").innerText = data.message;
+    })
+    .catch(err => {
+      document.getElementById("message").innerText = "Failed to reach backend";
+    });
+</script>
+
+</body>
+</html>
