@@ -15,13 +15,15 @@ jobs:
   detect-changes:
     runs-on: [self-hosted, ci]
     outputs:
-      frontend: ${{ steps.filter.outputs.frontend }}
-      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.set-outputs.outputs.frontend }}
+      backend:  ${{ steps.set-outputs.outputs.backend }}
 
     steps:
       - uses: actions/checkout@v4
 
+      # Run paths-filter ONLY on push
       - id: filter
+        if: github.event_name == 'push'
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -30,15 +32,26 @@ jobs:
             backend:
               - app/backend/**
 
+      # Normalize outputs for all events
+      - id: set-outputs
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "Manual run — building both frontend and backend"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "backend=true"  >> "$GITHUB_OUTPUT"
+          else
+            echo "frontend=${{ steps.filter.outputs.frontend }}" >> "$GITHUB_OUTPUT"
+            echo "backend=${{ steps.filter.outputs.backend }}" >> "$GITHUB_OUTPUT"
+          fi
+
   # ----------------------------
   # BUILD BACKEND
   # ----------------------------
   build-backend:
     needs: detect-changes
     runs-on: [self-hosted, ci]
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      needs.detect-changes.outputs.backend == 'true'
+    if: needs.detect-changes.outputs.backend == 'true'
 
     env:
       IMAGE: ${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}
@@ -65,9 +78,7 @@ jobs:
   build-frontend:
     needs: detect-changes
     runs-on: [self-hosted, ci]
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      needs.detect-changes.outputs.frontend == 'true'
+    if: needs.detect-changes.outputs.frontend == 'true'
 
     env:
       IMAGE: ${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}
