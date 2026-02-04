@@ -10,7 +10,7 @@ on:
 
 jobs:
   # ----------------------------
-  # DETECT CHANGES (ALWAYS RUNS)
+  # DETECT CHANGES
   # ----------------------------
   detect-changes:
     runs-on: [self-hosted, ci]
@@ -20,7 +20,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
       - id: filter
         uses: dorny/paths-filter@v3
         with:
@@ -34,14 +33,13 @@ jobs:
   # BUILD BACKEND
   # ----------------------------
   build-backend:
-    runs-on: [self-hosted, ci]
     needs: detect-changes
-    outputs:
-      image: ${{ steps.build.outputs.image }}
+    runs-on: [self-hosted, ci]
 
     env:
       EVENT_NAME: ${{ github.event_name }}
       BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend }}
+      IMAGE: ${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4
@@ -52,38 +50,29 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build backend image
-        id: build
+      - name: Build & push backend image
         shell: bash
         run: |
-          echo "EVENT_NAME=$EVENT_NAME"
-          echo "BACKEND_CHANGED=$BACKEND_CHANGED"
-
           if [[ "$EVENT_NAME" == "workflow_dispatch" || "$BACKEND_CHANGED" == "true" ]]; then
-            IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
             echo "Building backend image: $IMAGE"
-
             docker build -t backend:${{ github.sha }} app/backend
             docker tag backend:${{ github.sha }} $IMAGE
             docker push $IMAGE
-
-            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           else
-            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "Backend unchanged — skipping build"
           fi
 
   # ----------------------------
   # BUILD FRONTEND
   # ----------------------------
   build-frontend:
-    runs-on: [self-hosted, ci]
     needs: detect-changes
-    outputs:
-      image: ${{ steps.build.outputs.image }}
+    runs-on: [self-hosted, ci]
 
     env:
       EVENT_NAME: ${{ github.event_name }}
       FRONTEND_CHANGED: ${{ needs.detect-changes.outputs.frontend }}
+      IMAGE: ${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}
 
     steps:
       - uses: actions/checkout@v4
@@ -94,60 +83,49 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build frontend image
-        id: build
+      - name: Build & push frontend image
         shell: bash
         run: |
-          echo "EVENT_NAME=$EVENT_NAME"
-          echo "FRONTEND_CHANGED=$FRONTEND_CHANGED"
-
           if [[ "$EVENT_NAME" == "workflow_dispatch" || "$FRONTEND_CHANGED" == "true" ]]; then
-            IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
             echo "Building frontend image: $IMAGE"
-
             docker build -t frontend:${{ github.sha }} app/frontend
             docker tag frontend:${{ github.sha }} $IMAGE
             docker push $IMAGE
-
-            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           else
-            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "Frontend unchanged — skipping build"
           fi
 
   # ----------------------------
-  # DEBUG OUTPUTS (VISIBILITY)
-  # ----------------------------
-  debug-outputs:
-    needs: [build-backend, build-frontend]
-    runs-on: [self-hosted, ci]
-
-    steps:
-      - name: Print exported image outputs
-        run: |
-          echo "Backend image output  : '${{ needs.build-backend.outputs.image }}'"
-          echo "Frontend image output : '${{ needs.build-frontend.outputs.image }}'"
-
-  # ----------------------------
-  # TRIGGER DEPLOYMENT
+  # TRIGGER DEPLOYMENT (RESULT-BASED)
   # ----------------------------
   trigger-deployment:
     needs: [build-backend, build-frontend]
-    runs-on: [self-hosted, ci]
+    runs-on: self-hosted
+    if: always()
 
     steps:
+      - name: Debug build results
+        run: |
+          echo "build-backend result:  ${{ needs.build-backend.result }}"
+          echo "build-frontend result: ${{ needs.build-frontend.result }}"
+
       - name: Build deployment payload
         id: payload
+        shell: bash
+        env:
+          BACKEND_IMAGE:  ${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}
+          FRONTEND_IMAGE: ${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}
         run: |
           images=()
 
-          [[ -n "${{ needs.build-backend.outputs.image }}" ]] && \
-            images+=("\"backend_image\":\"${{ needs.build-backend.outputs.image }}\"")
+          [[ "${{ needs.build-backend.result }}" == "success" ]] && \
+            images+=("\"backend_image\":\"$BACKEND_IMAGE\"")
 
-          [[ -n "${{ needs.build-frontend.outputs.image }}" ]] && \
-            images+=("\"frontend_image\":\"${{ needs.build-frontend.outputs.image }}\"")
+          [[ "${{ needs.build-frontend.result }}" == "success" ]] && \
+            images+=("\"frontend_image\":\"$FRONTEND_IMAGE\"")
 
           if [[ ${#images[@]} -eq 0 ]]; then
-            echo "No images built — skipping deployment trigger"
+            echo "No images built — skipping deployment"
             echo "has_images=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
