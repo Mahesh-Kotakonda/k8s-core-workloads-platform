@@ -9,8 +9,12 @@ on:
   workflow_dispatch:
 
 jobs:
+  # ----------------------------
+  # DETECT CHANGES (push only)
+  # ----------------------------
   detect-changes:
     runs-on: [self-hosted, ci]
+    if: github.event_name != 'workflow_dispatch'
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
@@ -26,9 +30,12 @@ jobs:
             backend:
               - app/backend/**
 
+  # ----------------------------
+  # BUILD BACKEND
+  # ----------------------------
   build-backend:
-    needs: detect-changes
     runs-on: [self-hosted, ci]
+    needs: [detect-changes]
     outputs:
       image: ${{ steps.out.outputs.image }}
 
@@ -43,7 +50,7 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build backend
+      - name: Build backend image
         if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.backend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
@@ -52,9 +59,12 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+  # ----------------------------
+  # BUILD FRONTEND
+  # ----------------------------
   build-frontend:
-    needs: detect-changes
     runs-on: [self-hosted, ci]
+    needs: [detect-changes]
     outputs:
       image: ${{ steps.out.outputs.image }}
 
@@ -69,7 +79,7 @@ jobs:
 
       - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build frontend
+      - name: Build frontend image
         if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.frontend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
@@ -107,7 +117,7 @@ jobs:
           echo "payload={\"ref\":\"$GITHUB_REF\",$joined}" >> "$GITHUB_OUTPUT"
           echo "has_images=true" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger deployment
+      - name: Trigger deployment workflow
         if: steps.payload.outputs.has_images == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
