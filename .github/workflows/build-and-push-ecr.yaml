@@ -39,6 +39,10 @@ jobs:
     outputs:
       image: ${{ steps.build.outputs.image }}
 
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -50,30 +54,23 @@ jobs:
 
       - name: Build backend image
         id: build
+        shell: bash
         run: |
-          SHOULD_BUILD=false
+          echo "EVENT_NAME=$EVENT_NAME"
+          echo "BACKEND_CHANGED=$BACKEND_CHANGED"
 
-          # Manual run → always build
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            SHOULD_BUILD=true
-          # Push run → build only if backend changed
-          elif [[ "${{ needs.detect-changes.outputs.backend }}" == "true" ]]; then
-            SHOULD_BUILD=true
-          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$BACKEND_CHANGED" == "true" ]]; then
+            IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
+            echo "Building backend image: $IMAGE"
 
-          if [[ "$SHOULD_BUILD" != "true" ]]; then
+            docker build -t backend:${{ github.sha }} app/backend
+            docker tag backend:${{ github.sha }} $IMAGE
+            docker push $IMAGE
+
+            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          else
             echo "image=" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-
-          IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
-          echo "Building backend image: $IMAGE"
-
-          docker build -t backend:${{ github.sha }} app/backend
-          docker tag backend:${{ github.sha }} $IMAGE
-          docker push $IMAGE
-
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   # ----------------------------
   # BUILD FRONTEND
@@ -83,6 +80,10 @@ jobs:
     needs: detect-changes
     outputs:
       image: ${{ steps.build.outputs.image }}
+
+    env:
+      EVENT_NAME: ${{ github.event_name }}
+      FRONTEND_CHANGED: ${{ needs.detect-changes.outputs.frontend }}
 
     steps:
       - uses: actions/checkout@v4
@@ -95,30 +96,23 @@ jobs:
 
       - name: Build frontend image
         id: build
+        shell: bash
         run: |
-          SHOULD_BUILD=false
+          echo "EVENT_NAME=$EVENT_NAME"
+          echo "FRONTEND_CHANGED=$FRONTEND_CHANGED"
 
-          # Manual run → always build
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            SHOULD_BUILD=true
-          # Push run → build only if frontend changed
-          elif [[ "${{ needs.detect-changes.outputs.frontend }}" == "true" ]]; then
-            SHOULD_BUILD=true
-          fi
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$FRONTEND_CHANGED" == "true" ]]; then
+            IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
+            echo "Building frontend image: $IMAGE"
 
-          if [[ "$SHOULD_BUILD" != "true" ]]; then
+            docker build -t frontend:${{ github.sha }} app/frontend
+            docker tag frontend:${{ github.sha }} $IMAGE
+            docker push $IMAGE
+
+            echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          else
             echo "image=" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-
-          IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
-          echo "Building frontend image: $IMAGE"
-
-          docker build -t frontend:${{ github.sha }} app/frontend
-          docker tag frontend:${{ github.sha }} $IMAGE
-          docker push $IMAGE
-
-          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   # ----------------------------
   # DEBUG OUTPUTS (VISIBILITY)
