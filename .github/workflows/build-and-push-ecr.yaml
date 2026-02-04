@@ -36,16 +36,18 @@ jobs:
   # ----------------------------
   build-backend:
     needs: detect-changes
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      needs.detect-changes.outputs.backend == 'true'
     runs-on: [self-hosted, ci]
 
     outputs:
-      image: ${{ steps.build.outputs.image }}
+      image: ${{ steps.output.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
+
+      # Always initialize output (CRITICAL)
+      - name: Initialize backend image output
+        id: output
+        run: echo "image=" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -54,7 +56,9 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build & push backend image
-        id: build
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          needs.detect-changes.outputs.backend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
           docker build -t backend:${{ github.sha }} app/backend
@@ -67,16 +71,18 @@ jobs:
   # ----------------------------
   build-frontend:
     needs: detect-changes
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      needs.detect-changes.outputs.frontend == 'true'
     runs-on: [self-hosted, ci]
 
     outputs:
-      image: ${{ steps.build.outputs.image }}
+      image: ${{ steps.output.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
+
+      # Always initialize output (CRITICAL)
+      - name: Initialize frontend image output
+        id: output
+        run: echo "image=" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -85,7 +91,9 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build & push frontend image
-        id: build
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          needs.detect-changes.outputs.frontend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
           docker build -t frontend:${{ github.sha }} app/frontend
