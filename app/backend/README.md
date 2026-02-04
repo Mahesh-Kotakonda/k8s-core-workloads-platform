@@ -1,6 +1,6 @@
 # Backend Service
 
-This backend service is a simple stateless API designed to demonstrate
+This backend service is a simple stateless API designed to demonstrate.
 Kubernetes blue-green deployment patterns.
 
 ## Endpoints
@@ -22,3 +22,4 @@ Health check endpoint for Kubernetes probes.
 - Stateless design
 - Namespace awareness
 - Easy to verify from frontend UI
+
