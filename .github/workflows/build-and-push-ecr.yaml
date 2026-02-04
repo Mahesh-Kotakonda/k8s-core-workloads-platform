@@ -10,10 +10,9 @@ on:
 
 jobs:
   # ----------------------------
-  # DETECT CHANGES (PUSH ONLY)
+  # DETECT CHANGES (ALWAYS RUNS)
   # ----------------------------
   detect-changes:
-    if: github.event_name == 'push'
     runs-on: [self-hosted, ci]
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
@@ -21,6 +20,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - id: filter
         uses: dorny/paths-filter@v3
         with:
@@ -31,18 +31,21 @@ jobs:
               - app/backend/**
 
   # ----------------------------
-  # BUILD BACKEND (ALWAYS RUNS)
+  # BUILD BACKEND
   # ----------------------------
   build-backend:
     runs-on: [self-hosted, ci]
+    needs: detect-changes
     outputs:
       image: ${{ steps.build.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
+
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build backend image
@@ -50,9 +53,11 @@ jobs:
         run: |
           SHOULD_BUILD=false
 
+          # Manual run → always build
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             SHOULD_BUILD=true
-          elif [[ "${{ github.event_name }}" == "push" && "${{ needs.detect-changes.outputs.backend }}" == "true" ]]; then
+          # Push run → build only if backend changed
+          elif [[ "${{ needs.detect-changes.outputs.backend }}" == "true" ]]; then
             SHOULD_BUILD=true
           fi
 
@@ -62,24 +67,30 @@ jobs:
           fi
 
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
+          echo "Building backend image: $IMAGE"
+
           docker build -t backend:${{ github.sha }} app/backend
           docker tag backend:${{ github.sha }} $IMAGE
           docker push $IMAGE
+
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   # ----------------------------
-  # BUILD FRONTEND (ALWAYS RUNS)
+  # BUILD FRONTEND
   # ----------------------------
   build-frontend:
     runs-on: [self-hosted, ci]
+    needs: detect-changes
     outputs:
       image: ${{ steps.build.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
+
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build frontend image
@@ -87,9 +98,11 @@ jobs:
         run: |
           SHOULD_BUILD=false
 
+          # Manual run → always build
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             SHOULD_BUILD=true
-          elif [[ "${{ github.event_name }}" == "push" && "${{ needs.detect-changes.outputs.frontend }}" == "true" ]]; then
+          # Push run → build only if frontend changed
+          elif [[ "${{ needs.detect-changes.outputs.frontend }}" == "true" ]]; then
             SHOULD_BUILD=true
           fi
 
@@ -99,10 +112,26 @@ jobs:
           fi
 
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
+          echo "Building frontend image: $IMAGE"
+
           docker build -t frontend:${{ github.sha }} app/frontend
           docker tag frontend:${{ github.sha }} $IMAGE
           docker push $IMAGE
+
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+  # ----------------------------
+  # DEBUG OUTPUTS (VISIBILITY)
+  # ----------------------------
+  debug-outputs:
+    needs: [build-backend, build-frontend]
+    runs-on: [self-hosted, ci]
+
+    steps:
+      - name: Print exported image outputs
+        run: |
+          echo "Backend image output  : '${{ needs.build-backend.outputs.image }}'"
+          echo "Frontend image output : '${{ needs.build-frontend.outputs.image }}'"
 
   # ----------------------------
   # TRIGGER DEPLOYMENT
@@ -124,6 +153,7 @@ jobs:
             images+=("\"frontend_image\":\"${{ needs.build-frontend.outputs.image }}\"")
 
           if [[ ${#images[@]} -eq 0 ]]; then
+            echo "No images built — skipping deployment trigger"
             echo "has_images=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -132,7 +162,7 @@ jobs:
           echo "payload={\"ref\":\"$GITHUB_REF\",$joined}" >> "$GITHUB_OUTPUT"
           echo "has_images=true" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger deployment
+      - name: Trigger deployment workflow
         if: steps.payload.outputs.has_images == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
