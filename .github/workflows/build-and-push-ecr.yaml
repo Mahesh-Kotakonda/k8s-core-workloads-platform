@@ -52,16 +52,13 @@ jobs:
       - name: Build backend image
         if: |
           github.event_name == 'workflow_dispatch' ||
-          needs.detect-changes.outputs.backend == 'true'
+          (github.event_name == 'push' && needs.detect-changes.outputs.backend == 'true')
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
           docker build -t backend:${{ github.sha }} app/backend
           docker tag backend:${{ github.sha }} $IMAGE
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
-    needs:
-      - detect-changes
 
   # ----------------------------
   # BUILD FRONTEND
@@ -85,16 +82,13 @@ jobs:
       - name: Build frontend image
         if: |
           github.event_name == 'workflow_dispatch' ||
-          needs.detect-changes.outputs.frontend == 'true'
+          (github.event_name == 'push' && needs.detect-changes.outputs.frontend == 'true')
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
           docker build -t frontend:${{ github.sha }} app/frontend
           docker tag frontend:${{ github.sha }} $IMAGE
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
-
-    needs:
-      - detect-changes
 
   # ----------------------------
   # TRIGGER DEPLOYMENT
@@ -125,7 +119,7 @@ jobs:
           echo "payload={\"ref\":\"$GITHUB_REF\",$joined}" >> "$GITHUB_OUTPUT"
           echo "has_images=true" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger deployment workflow
+      - name: Trigger deployment
         if: steps.payload.outputs.has_images == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
