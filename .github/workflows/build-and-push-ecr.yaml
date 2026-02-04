@@ -11,7 +11,7 @@ on:
 
 jobs:
   # ----------------------------
-  # DETECT CHANGES (PATH FILTER)
+  # DETECT CHANGES
   # ----------------------------
   detect-changes:
     runs-on: [self-hosted, ci]
@@ -20,11 +20,9 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Detect changed paths
-        id: filter
+      - id: filter
         uses: dorny/paths-filter@v3
         with:
           filters: |
@@ -33,13 +31,8 @@ jobs:
             backend:
               - 'app/backend/**'
 
-      - name: Debug detected paths
-        run: |
-          echo "Frontend changed: ${{ steps.filter.outputs.frontend }}"
-          echo "Backend changed:  ${{ steps.filter.outputs.backend }}"
-
   # ----------------------------
-  # BUILD & PUSH BACKEND IMAGE
+  # BUILD BACKEND
   # ----------------------------
   build-backend:
     needs: detect-changes
@@ -49,40 +42,28 @@ jobs:
     runs-on: [self-hosted, ci]
 
     outputs:
-      image: ${{ steps.export.outputs.image }}
+      image: ${{ steps.build.outputs.image }}
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (IAM role)
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push backend image
+      - name: Build & push backend image
+        id: build
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
-
-          echo "Building backend image: $IMAGE"
-
           docker build -t backend:${{ github.sha }} app/backend
           docker tag backend:${{ github.sha }} $IMAGE
           docker push $IMAGE
-
-          echo "BACKEND_IMAGE=$IMAGE" >> $GITHUB_ENV
-
-      - name: Export backend image output
-        id: export
-        run: |
-          echo "image=$BACKEND_IMAGE" >> "$GITHUB_OUTPUT"
-          echo "Backend image output set to: $BACKEND_IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   # ----------------------------
-  # BUILD & PUSH FRONTEND IMAGE
+  # BUILD FRONTEND
   # ----------------------------
   build-frontend:
     needs: detect-changes
@@ -92,40 +73,28 @@ jobs:
     runs-on: [self-hosted, ci]
 
     outputs:
-      image: ${{ steps.export.outputs.image }}
+      image: ${{ steps.build.outputs.image }}
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (IAM role)
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
-        uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push frontend image
+      - name: Build & push frontend image
+        id: build
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
-
-          echo "Building frontend image: $IMAGE"
-
           docker build -t frontend:${{ github.sha }} app/frontend
           docker tag frontend:${{ github.sha }} $IMAGE
           docker push $IMAGE
-
-          echo "FRONTEND_IMAGE=$IMAGE" >> $GITHUB_ENV
-
-      - name: Export frontend image output
-        id: export
-        run: |
-          echo "image=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
-          echo "Frontend image output set to: $FRONTEND_IMAGE"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
   # ----------------------------
-  # CALL DEPLOYMENT WORKFLOW
+  # DEPLOY
   # ----------------------------
   deploy:
     needs:
@@ -139,4 +108,3 @@ jobs:
     with:
       backend_image: ${{ needs.build-backend.outputs.image }}
       frontend_image: ${{ needs.build-frontend.outputs.image }}
-
