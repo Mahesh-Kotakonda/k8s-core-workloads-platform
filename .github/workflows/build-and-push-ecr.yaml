@@ -21,6 +21,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - id: filter
         uses: dorny/paths-filter@v3
         with:
@@ -36,12 +37,10 @@ jobs:
   build-backend:
     runs-on: [self-hosted, ci]
     outputs:
-      image: ${{ steps.out.outputs.image }}
+      image: ${{ steps.build.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
-      - id: out
-        run: echo "image=" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -50,6 +49,7 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build backend image
+        id: build
         if: |
           github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'push' && needs.detect-changes.outputs.backend == 'true')
@@ -60,18 +60,19 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+    needs:
+      - detect-changes
+
   # ----------------------------
   # BUILD FRONTEND
   # ----------------------------
   build-frontend:
     runs-on: [self-hosted, ci]
     outputs:
-      image: ${{ steps.out.outputs.image }}
+      image: ${{ steps.build.outputs.image }}
 
     steps:
       - uses: actions/checkout@v4
-      - id: out
-        run: echo "image=" >> "$GITHUB_OUTPUT"
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -80,6 +81,7 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build frontend image
+        id: build
         if: |
           github.event_name == 'workflow_dispatch' ||
           (github.event_name == 'push' && needs.detect-changes.outputs.frontend == 'true')
@@ -89,6 +91,9 @@ jobs:
           docker tag frontend:${{ github.sha }} $IMAGE
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+    needs:
+      - detect-changes
 
   # ----------------------------
   # TRIGGER DEPLOYMENT
@@ -119,7 +124,7 @@ jobs:
           echo "payload={\"ref\":\"$GITHUB_REF\",$joined}" >> "$GITHUB_OUTPUT"
           echo "has_images=true" >> "$GITHUB_OUTPUT"
 
-      - name: Trigger deployment
+      - name: Trigger deployment workflow
         if: steps.payload.outputs.has_images == 'true'
         uses: peter-evans/repository-dispatch@v3
         with:
