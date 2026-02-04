@@ -28,9 +28,10 @@ jobs:
     name: Kubernetes Deployment
     runs-on: [self-hosted, deploy]
 
+    # 🔑 CRITICAL FIX — support BOTH triggers
     env:
-      FRONTEND_IMAGE: ${{ inputs.frontend_image }}
-      BACKEND_IMAGE: ${{ inputs.backend_image }}
+      FRONTEND_IMAGE: ${{ inputs.frontend_image || github.event.inputs.frontend_image }}
+      BACKEND_IMAGE:  ${{ inputs.backend_image  || github.event.inputs.backend_image }}
 
     steps:
       # ----------------------------
@@ -55,11 +56,11 @@ jobs:
           fi
 
           if [ -n "$FRONTEND_IMAGE" ]; then
-            echo "DEPLOY_FRONTEND=true" >> $GITHUB_ENV
+            echo "DEPLOY_FRONTEND=true" >> "$GITHUB_ENV"
           fi
 
           if [ -n "$BACKEND_IMAGE" ]; then
-            echo "DEPLOY_BACKEND=true" >> $GITHUB_ENV
+            echo "DEPLOY_BACKEND=true" >> "$GITHUB_ENV"
           fi
 
       # ----------------------------
