@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-green
+  namespace: dev
+  labels:
+    app: backend
+    version: green
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+      version: green
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: green
+    spec:
+      containers:
+        - name: backend
+          image: PLACEHOLDER_BACKEND_IMAGE
+          ports:
+            - containerPort: 3000
+          env:
+            - name: BACKEND_VERSION
+              value: "green"
+            - name: ENVIRONMENT
+              value: "dev"
