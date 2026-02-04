@@ -20,6 +20,7 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - id: filter
         uses: dorny/paths-filter@v3
         with:
@@ -35,10 +36,11 @@ jobs:
   build-backend:
     needs: detect-changes
     runs-on: [self-hosted, ci]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.backend == 'true'
 
     env:
-      EVENT_NAME: ${{ github.event_name }}
-      BACKEND_CHANGED: ${{ needs.detect-changes.outputs.backend }}
       IMAGE: ${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}
 
     steps:
@@ -51,16 +53,11 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build & push backend image
-        shell: bash
         run: |
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$BACKEND_CHANGED" == "true" ]]; then
-            echo "Building backend image: $IMAGE"
-            docker build -t backend:${{ github.sha }} app/backend
-            docker tag backend:${{ github.sha }} $IMAGE
-            docker push $IMAGE
-          else
-            echo "Backend unchanged — skipping build"
-          fi
+          echo "Building backend image: $IMAGE"
+          docker build -t backend:${{ github.sha }} app/backend
+          docker tag backend:${{ github.sha }} $IMAGE
+          docker push $IMAGE
 
   # ----------------------------
   # BUILD FRONTEND
@@ -68,10 +65,11 @@ jobs:
   build-frontend:
     needs: detect-changes
     runs-on: [self-hosted, ci]
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      needs.detect-changes.outputs.frontend == 'true'
 
     env:
-      EVENT_NAME: ${{ github.event_name }}
-      FRONTEND_CHANGED: ${{ needs.detect-changes.outputs.frontend }}
       IMAGE: ${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}
 
     steps:
@@ -84,16 +82,11 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build & push frontend image
-        shell: bash
         run: |
-          if [[ "$EVENT_NAME" == "workflow_dispatch" || "$FRONTEND_CHANGED" == "true" ]]; then
-            echo "Building frontend image: $IMAGE"
-            docker build -t frontend:${{ github.sha }} app/frontend
-            docker tag frontend:${{ github.sha }} $IMAGE
-            docker push $IMAGE
-          else
-            echo "Frontend unchanged — skipping build"
-          fi
+          echo "Building frontend image: $IMAGE"
+          docker build -t frontend:${{ github.sha }} app/frontend
+          docker tag frontend:${{ github.sha }} $IMAGE
+          docker push $IMAGE
 
   # ----------------------------
   # TRIGGER DEPLOYMENT (RESULT-BASED)
