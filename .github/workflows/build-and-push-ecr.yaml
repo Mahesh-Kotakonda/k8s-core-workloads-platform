@@ -10,11 +10,11 @@ on:
 
 jobs:
   # ----------------------------
-  # DETECT CHANGES (push only)
+  # DETECT CHANGES (PUSH ONLY)
   # ----------------------------
   detect-changes:
+    if: github.event_name == 'push'
     runs-on: [self-hosted, ci]
-    if: github.event_name != 'workflow_dispatch'
     outputs:
       frontend: ${{ steps.filter.outputs.frontend }}
       backend: ${{ steps.filter.outputs.backend }}
@@ -35,7 +35,6 @@ jobs:
   # ----------------------------
   build-backend:
     runs-on: [self-hosted, ci]
-    needs: [detect-changes]
     outputs:
       image: ${{ steps.out.outputs.image }}
 
@@ -51,7 +50,9 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build backend image
-        if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.backend == 'true'
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          needs.detect-changes.outputs.backend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
           docker build -t backend:${{ github.sha }} app/backend
@@ -59,12 +60,14 @@ jobs:
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
+    needs:
+      - detect-changes
+
   # ----------------------------
   # BUILD FRONTEND
   # ----------------------------
   build-frontend:
     runs-on: [self-hosted, ci]
-    needs: [detect-changes]
     outputs:
       image: ${{ steps.out.outputs.image }}
 
@@ -80,13 +83,18 @@ jobs:
       - uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build frontend image
-        if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.frontend == 'true'
+        if: |
+          github.event_name == 'workflow_dispatch' ||
+          needs.detect-changes.outputs.frontend == 'true'
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
           docker build -t frontend:${{ github.sha }} app/frontend
           docker tag frontend:${{ github.sha }} $IMAGE
           docker push $IMAGE
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+    needs:
+      - detect-changes
 
   # ----------------------------
   # TRIGGER DEPLOYMENT
