@@ -63,43 +63,43 @@ jobs:
             echo "DEPLOY_BACKEND=true" >> "$GITHUB_ENV"
           fi
 
-      # ----------------------------
-      # FRONTEND DEPLOYMENT (CANARY)
-      # ----------------------------
-      - name: Deploy Frontend (Canary v2)
-        if: env.DEPLOY_FRONTEND == 'true'
-        run: |
-          echo "🚀 Deploying frontend canary image: $FRONTEND_IMAGE"
+      # # ----------------------------
+      # # FRONTEND DEPLOYMENT (CANARY)
+      # # ----------------------------
+      # - name: Deploy Frontend (Canary v2)
+      #   if: env.DEPLOY_FRONTEND == 'true'
+      #   run: |
+      #     echo "🚀 Deploying frontend canary image: $FRONTEND_IMAGE"
 
-          kubectl set image deployment/frontend-v2 \
-            frontend=$FRONTEND_IMAGE \
-            -n dev
+      #     kubectl set image deployment/frontend-v2 \
+      #       frontend=$FRONTEND_IMAGE \
+      #       -n dev
 
-          kubectl rollout status deployment/frontend-v2 -n dev
+      #     kubectl rollout status deployment/frontend-v2 -n dev
 
-      # ----------------------------
-      # BACKEND DEPLOYMENT (BLUE-GREEN)
-      # ----------------------------
-      - name: Deploy Backend (Green)
-        if: env.DEPLOY_BACKEND == 'true'
-        run: |
-          echo "🚀 Deploying backend GREEN image: $BACKEND_IMAGE"
+      # # ----------------------------
+      # # BACKEND DEPLOYMENT (BLUE-GREEN)
+      # # ----------------------------
+      # - name: Deploy Backend (Green)
+      #   if: env.DEPLOY_BACKEND == 'true'
+      #   run: |
+      #     echo "🚀 Deploying backend GREEN image: $BACKEND_IMAGE"
 
-          kubectl set image deployment/backend-green \
-            backend=$BACKEND_IMAGE \
-            -n dev
+      #     kubectl set image deployment/backend-green \
+      #       backend=$BACKEND_IMAGE \
+      #       -n dev
 
-          kubectl rollout status deployment/backend-green -n dev
+      #     kubectl rollout status deployment/backend-green -n dev
 
-      # ----------------------------
-      # TRAFFIC SWITCH (BLUE → GREEN)
-      # ----------------------------
-      - name: Switch Backend Traffic to Green
-        if: env.DEPLOY_BACKEND == 'true'
-        run: |
-          echo "🔄 Switching backend traffic to GREEN"
+      # # ----------------------------
+      # # TRAFFIC SWITCH (BLUE → GREEN)
+      # # ----------------------------
+      # - name: Switch Backend Traffic to Green
+      #   if: env.DEPLOY_BACKEND == 'true'
+      #   run: |
+      #     echo "🔄 Switching backend traffic to GREEN"
 
-          kubectl patch service backend-service -n dev \
-            -p '{"spec":{"selector":{"app":"backend","version":"green"}}}'
+      #     kubectl patch service backend-service -n dev \
+      #       -p '{"spec":{"selector":{"app":"backend","version":"green"}}}'
 
-          kubectl get svc backend-service -n dev -o wide
+      #     kubectl get svc backend-service -n dev -o wide
