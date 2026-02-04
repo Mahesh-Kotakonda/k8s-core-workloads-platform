@@ -6,7 +6,7 @@ metadata:
 spec:
   selector:
     app: backend
-    version: blue   # 👈 default traffic goes to BLUE
+    color: blue   # CD switches this
   ports:
     - port: 80
       targetPort: 3000
