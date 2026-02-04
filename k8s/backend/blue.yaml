@@ -2,29 +2,82 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend-blue
-  namespace: dev
+  namespace: dev   # CD will replace namespace dynamically
   labels:
     app: backend
-    version: blue
+    color: blue
 spec:
   replicas: 2
   selector:
     matchLabels:
       app: backend
-      version: blue
+      color: blue
   template:
     metadata:
       labels:
         app: backend
-        version: blue
+        color: blue
     spec:
+
+      # ---------- INIT CONTAINER ----------
+      initContainers:
+        - name: init-check
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "Initializing backend in $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+              sleep 5
+
       containers:
+        # ---------- MAIN APP ----------
         - name: backend
-          image: PLACEHOLDER_BACKEND_IMAGE
+          image: BACKEND_IMAGE   # injected by CD
           ports:
             - containerPort: 3000
+
           env:
-            - name: BACKEND_VERSION
-              value: "blue"
             - name: ENVIRONMENT
-              value: "dev"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+            - name: BACKEND_VERSION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['color']
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "300m"
+              memory: "256Mi"
+
+        # ---------- SIDECAR ----------
+        - name: logging-sidecar
+          image: busybox
+          command: ["sh", "-c", "tail -F /var/log/app.log"]
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+
+      volumes:
+        - name: logs
+          emptyDir: {}
