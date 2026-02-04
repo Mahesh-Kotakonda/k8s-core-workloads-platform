@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Pre-deployment check
+      - name: Pre-deployment validation
         run: |
           echo "Frontend image: $FRONTEND_IMAGE"
           echo "Backend image:  $BACKEND_IMAGE"
@@ -27,6 +27,8 @@ jobs:
 
           [[ -n "$FRONTEND_IMAGE" ]] && echo "DEPLOY_FRONTEND=true" >> "$GITHUB_ENV"
           [[ -n "$BACKEND_IMAGE"  ]] && echo "DEPLOY_BACKEND=true"  >> "$GITHUB_ENV"
+
+      # 👉 Add your kubectl deployment steps here
 
       # # ----------------------------
       # # FRONTEND DEPLOYMENT (CANARY)
