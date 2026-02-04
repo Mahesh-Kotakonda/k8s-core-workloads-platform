@@ -132,9 +132,11 @@ jobs:
       - build-backend
       - build-frontend
     if: |
+      github.event_name == 'workflow_dispatch' ||
       needs.build-backend.outputs.image != '' ||
       needs.build-frontend.outputs.image != ''
     uses: ./.github/workflows/deploy-to-k8s.yaml
     with:
       backend_image: ${{ needs.build-backend.outputs.image }}
       frontend_image: ${{ needs.build-frontend.outputs.image }}
+
