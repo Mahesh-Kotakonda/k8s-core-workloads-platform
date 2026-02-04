@@ -1,6 +1,19 @@
 name: Deploy to Kubernetes
 
 on:
+  # 1️⃣ Manual execution
+  workflow_dispatch:
+    inputs:
+      frontend_image:
+        description: "Frontend image URI (optional)"
+        required: false
+        type: string
+      backend_image:
+        description: "Backend image URI (optional)"
+        required: false
+        type: string
+
+  # 2️⃣ Automatic execution from CI
   workflow_call:
     inputs:
       frontend_image:
@@ -12,31 +25,80 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    name: Kubernetes Deployment
+    runs-on: [self-hosted, deploy]
+
+    env:
+      FRONTEND_IMAGE: ${{ inputs.frontend_image }}
+      BACKEND_IMAGE: ${{ inputs.backend_image }}
 
     steps:
+      # ----------------------------
+      # PRE-DEPLOYMENT STAGE
+      # ----------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure kubeconfig
+      - name: Verify kubectl access
         run: |
-          # kubeconfig already present on runner
           kubectl version --client
+          kubectl get namespaces
 
-      - name: Deploy Backend (Blue/Green)
-        if: ${{ inputs.backend_image != '' }}
+      - name: Pre-deployment check
         run: |
-          echo "Deploying backend image: ${{ inputs.backend_image }}"
+          echo "Frontend image: $FRONTEND_IMAGE"
+          echo "Backend image:  $BACKEND_IMAGE"
 
-          kubectl set image deployment/backend-green \
-            backend=${{ inputs.backend_image }} \
-            -n dev
+          if [ -z "$FRONTEND_IMAGE" ] && [ -z "$BACKEND_IMAGE" ]; then
+            echo "❌ No images provided. Exiting."
+            exit 1
+          fi
 
-      - name: Deploy Frontend (Canary)
-        if: ${{ inputs.frontend_image != '' }}
+          if [ -n "$FRONTEND_IMAGE" ]; then
+            echo "DEPLOY_FRONTEND=true" >> $GITHUB_ENV
+          fi
+
+          if [ -n "$BACKEND_IMAGE" ]; then
+            echo "DEPLOY_BACKEND=true" >> $GITHUB_ENV
+          fi
+
+      # ----------------------------
+      # FRONTEND DEPLOYMENT (CANARY)
+      # ----------------------------
+      - name: Deploy Frontend (Canary v2)
+        if: env.DEPLOY_FRONTEND == 'true'
         run: |
-          echo "Deploying frontend image: ${{ inputs.frontend_image }}"
+          echo "🚀 Deploying frontend canary image: $FRONTEND_IMAGE"
 
           kubectl set image deployment/frontend-v2 \
-            frontend=${{ inputs.frontend_image }} \
+            frontend=$FRONTEND_IMAGE \
             -n dev
+
+          kubectl rollout status deployment/frontend-v2 -n dev
+
+      # ----------------------------
+      # BACKEND DEPLOYMENT (BLUE-GREEN)
+      # ----------------------------
+      - name: Deploy Backend (Green)
+        if: env.DEPLOY_BACKEND == 'true'
+        run: |
+          echo "🚀 Deploying backend GREEN image: $BACKEND_IMAGE"
+
+          kubectl set image deployment/backend-green \
+            backend=$BACKEND_IMAGE \
+            -n dev
+
+          kubectl rollout status deployment/backend-green -n dev
+
+      # ----------------------------
+      # TRAFFIC SWITCH (BLUE → GREEN)
+      # ----------------------------
+      - name: Switch Backend Traffic to Green
+        if: env.DEPLOY_BACKEND == 'true'
+        run: |
+          echo "🔄 Switching backend traffic to GREEN"
+
+          kubectl patch service backend-service -n dev \
+            -p '{"spec":{"selector":{"app":"backend","version":"green"}}}'
+
+          kubectl get svc backend-service -n dev -o wide
