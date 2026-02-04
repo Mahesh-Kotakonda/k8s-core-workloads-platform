@@ -33,6 +33,11 @@ jobs:
             backend:
               - 'app/backend/**'
 
+      - name: Debug detected paths
+        run: |
+          echo "Frontend changed: ${{ steps.filter.outputs.frontend }}"
+          echo "Backend changed:  ${{ steps.filter.outputs.backend }}"
+
   # ----------------------------
   # BUILD & PUSH BACKEND IMAGE
   # ----------------------------
@@ -44,7 +49,7 @@ jobs:
     runs-on: [self-hosted, ci]
 
     outputs:
-      image: ${{ steps.push.outputs.image }}
+      image: ${{ steps.export.outputs.image }}
 
     steps:
       - name: Checkout source
@@ -59,15 +64,22 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push backend image
-        id: push
         run: |
           IMAGE="${{ secrets.ECR_BACKEND_REPO }}:${{ github.sha }}"
+
+          echo "Building backend image: $IMAGE"
 
           docker build -t backend:${{ github.sha }} app/backend
           docker tag backend:${{ github.sha }} $IMAGE
           docker push $IMAGE
 
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "BACKEND_IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Export backend image output
+        id: export
+        run: |
+          echo "image=$BACKEND_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Backend image output set to: $BACKEND_IMAGE"
 
   # ----------------------------
   # BUILD & PUSH FRONTEND IMAGE
@@ -80,7 +92,7 @@ jobs:
     runs-on: [self-hosted, ci]
 
     outputs:
-      image: ${{ steps.push.outputs.image }}
+      image: ${{ steps.export.outputs.image }}
 
     steps:
       - name: Checkout source
@@ -95,15 +107,22 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push frontend image
-        id: push
         run: |
           IMAGE="${{ secrets.ECR_FRONTEND_REPO }}:${{ github.sha }}"
+
+          echo "Building frontend image: $IMAGE"
 
           docker build -t frontend:${{ github.sha }} app/frontend
           docker tag frontend:${{ github.sha }} $IMAGE
           docker push $IMAGE
 
-          echo "image=$IMAGE" >> $GITHUB_OUTPUT
+          echo "FRONTEND_IMAGE=$IMAGE" >> $GITHUB_ENV
+
+      - name: Export frontend image output
+        id: export
+        run: |
+          echo "image=$FRONTEND_IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Frontend image output set to: $FRONTEND_IMAGE"
 
   # ----------------------------
   # CALL DEPLOYMENT WORKFLOW
@@ -119,4 +138,3 @@ jobs:
     with:
       backend_image: ${{ needs.build-backend.outputs.image }}
       frontend_image: ${{ needs.build-frontend.outputs.image }}
-
