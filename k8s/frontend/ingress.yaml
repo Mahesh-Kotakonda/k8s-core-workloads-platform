@@ -4,13 +4,13 @@ metadata:
   name: frontend-ingress
   namespace: dev
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/load-balancer-name: shared-frontend-alb
     alb.ingress.kubernetes.io/group.name: frontend
     alb.ingress.kubernetes.io/group.order: "10"
 spec:
+  ingressClassName: alb
   rules:
     - http:
         paths:
