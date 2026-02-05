@@ -9,4 +9,4 @@ const ENVIRONMENT = "${ENVIRONMENT:-unknown}";
 EOF
 
 echo "Starting nginx..."
-exec nginx -g 'daemon off;'
+exec nginx -g 'daemon off; error_log /dev/stderr warn;'
