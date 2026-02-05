@@ -45,7 +45,7 @@
       document.getElementById("backend").innerText = data.backend_version;
       document.getElementById("message").innerText = data.message;
     })
-    .catch(err => {
+    .catch(() => {
       document.getElementById("message").innerText = "Failed to reach backend";
     });
 </script>
