@@ -18,13 +18,47 @@ spec:
         app: frontend
         version: v1
     spec:
+      imagePullSecrets:
+        - name: ecr-secret
+
+      # ---------- INIT CONTAINER ----------
+      initContainers:
+        - name: init-frontend
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo "Initializing frontend in namespace $(cat /var/run/secrets/kubernetes.io/serviceaccount/namespace)"
+              sleep 3
+
       containers:
+        # ---------- MAIN FRONTEND ----------
         - name: frontend
-          image: PLACEHOLDER_FRONTEND_IMAGE
+          image: 349070092739.dkr.ecr.us-east-1.amazonaws.com/k8s-core-frontend:<TAG>
           ports:
             - containerPort: 80
+
           env:
             - name: FRONTEND_VERSION
               value: "v1"
             - name: ENVIRONMENT
-              value: "dev"
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+
+        # ---------- SIDECAR ----------
+        - name: logging-sidecar
+          image: busybox
+          command: ["sh", "-c", "tail -F /var/log/frontend.log"]
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+
+      volumes:
+        - name: logs
+          emptyDir: {}
