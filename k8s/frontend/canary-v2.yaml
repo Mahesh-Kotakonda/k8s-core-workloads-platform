@@ -33,7 +33,7 @@ spec:
 
       containers:
         - name: frontend
-          image: 349070092739.dkr.ecr.us-east-1.amazonaws.com/k8s-core-frontend:a21e59a3de274dd29d96eb245966fde8a0b0ca81
+          image: 349070092739.dkr.ecr.us-east-1.amazonaws.com/k8s-core-frontend:8823d947ebe6062a66f25abc25fa597b908dd922
           ports:
             - containerPort: 80
           env:
@@ -63,4 +63,5 @@ spec:
       volumes:
         - name: logs
           emptyDir: {}
+
 
