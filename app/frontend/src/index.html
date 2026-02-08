@@ -1,11 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!-- 🔑 This tells the browser that the app lives under /dev/ -->
-  <base href="/dev/">
-
   <title>Kubernetes Core Workloads Demo</title>
-
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -39,15 +35,13 @@
   <pre id="message">Loading...</pre>
 </div>
 
-<!-- This now resolves to /dev/env.js -->
 <script src="env.js"></script>
 
 <script>
   document.getElementById("env").innerText = ENVIRONMENT;
   document.getElementById("frontend").innerText = FRONTEND_VERSION;
 
-  // 🔑 RELATIVE path so it respects <base href="/dev/">
-  fetch("./api/message")
+  fetch("/api/message")
     .then(response => response.json())
     .then(data => {
       document.getElementById("backend").innerText = data.backend_version;
