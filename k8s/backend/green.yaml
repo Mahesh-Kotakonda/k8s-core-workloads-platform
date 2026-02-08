@@ -2,7 +2,6 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: backend-green
-  namespace: dev
   labels:
     app: backend
     color: green
@@ -72,5 +71,6 @@ spec:
       volumes:
         - name: logs
           emptyDir: {}
+
 
 
