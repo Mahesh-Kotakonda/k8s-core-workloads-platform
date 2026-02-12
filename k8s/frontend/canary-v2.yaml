@@ -51,7 +51,7 @@ spec:
           # 🔴 REQUIRED for NLB + IP target mode
           readinessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 80
             initialDelaySeconds: 5
             periodSeconds: 5
@@ -59,7 +59,7 @@ spec:
 
           livenessProbe:
             httpGet:
-              path: /
+              path: /health
               port: 80
             initialDelaySeconds: 10
             periodSeconds: 10
@@ -81,6 +81,7 @@ spec:
       volumes:
         - name: logs
           emptyDir: {}
+
 
 
 
