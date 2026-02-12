@@ -35,13 +35,15 @@
   <pre id="message">Loading...</pre>
 </div>
 
-<script src="env.js"></script>
+<!-- IMPORTANT: Use relative path -->
+<script src="./env.js"></script>
 
 <script>
   document.getElementById("env").innerText = ENVIRONMENT;
   document.getElementById("frontend").innerText = FRONTEND_VERSION;
 
-  fetch("/api/message")
+  // IMPORTANT: no leading slash
+  fetch("api/message")
     .then(response => response.json())
     .then(data => {
       document.getElementById("backend").innerText = data.backend_version;
