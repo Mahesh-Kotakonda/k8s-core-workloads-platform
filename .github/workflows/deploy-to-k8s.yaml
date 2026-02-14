@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # ---------------------------------
-      # PRE-DEPLOYMENT VALIDATION
+      # VALIDATION
       # ---------------------------------
       - name: Pre-deployment validation
         run: |
@@ -24,35 +24,27 @@ jobs:
           echo "Backend image:  $BACKEND_IMAGE"
 
           if [ -z "$FRONTEND_IMAGE" ] && [ -z "$BACKEND_IMAGE" ]; then
-            echo "❌ No images provided. Exiting."
+            echo "❌ No images provided."
             exit 1
           fi
 
-          [[ -n "$FRONTEND_IMAGE" ]] && echo "DEPLOY_FRONTEND=true" >> "$GITHUB_ENV"
-          [[ -n "$BACKEND_IMAGE"  ]] && echo "DEPLOY_BACKEND=true"  >> "$GITHUB_ENV"
+          [[ -n "$FRONTEND_IMAGE" ]] && echo "DEPLOY_FRONTEND=true" >> $GITHUB_ENV
+          [[ -n "$BACKEND_IMAGE"  ]] && echo "DEPLOY_BACKEND=true"  >> $GITHUB_ENV
 
-      # ---------------------------------
-      # DEFINE NAMESPACES
-      # ---------------------------------
       - name: Set Namespaces
         run: echo "NAMESPACES=dev stage prod" >> $GITHUB_ENV
 
       # ---------------------------------
-      # ENSURE NAMESPACES EXIST
+      # ENSURE NAMESPACE
       # ---------------------------------
       - name: Ensure Namespaces Exist
         run: |
           for ns in $NAMESPACES; do
-            if ! kubectl get ns $ns >/dev/null 2>&1; then
-              echo "Creating namespace $ns"
-              kubectl apply -f k8s/namespaces/$ns.yaml
-            else
-              echo "Namespace $ns already exists"
-            fi
+            kubectl get ns $ns >/dev/null 2>&1 || kubectl apply -f k8s/namespaces/$ns.yaml
           done
 
       # ---------------------------------
-      # CREATE / UPDATE ECR SECRET
+      # ECR SECRET
       # ---------------------------------
       - name: Create / Update ECR Secret
         run: |
@@ -60,7 +52,6 @@ jobs:
 
           for ns in $NAMESPACES; do
             kubectl delete secret ecr-secret -n $ns --ignore-not-found
-
             kubectl create secret docker-registry ecr-secret \
               --namespace $ns \
               --docker-server=349070092739.dkr.ecr.us-east-1.amazonaws.com \
@@ -69,179 +60,96 @@ jobs:
           done
 
       # ---------------------------------
-      # APPLY BASE MANIFESTS
+      # DEPLOY PER NAMESPACE
       # ---------------------------------
-      - name: Apply Base Manifests
-        run: |
-          for ns in $NAMESPACES; do
-            echo "Applying base manifests in $ns"
-
-            kubectl apply -f k8s/backend/blue.yaml -n $ns
-            kubectl apply -f k8s/backend/green.yaml -n $ns
-            kubectl apply -f k8s/backend/service.yaml -n $ns
-
-            kubectl apply -f k8s/frontend/canary-v1.yaml -n $ns
-            kubectl apply -f k8s/frontend/canary-v2.yaml -n $ns
-            kubectl apply -f k8s/frontend/service-clusterip.yaml -n $ns
-
-            kubectl apply -f k8s/ingress/$ns.yaml -n $ns
-          done
-
-      # ---------------------------------
-      # WAIT FOR ALB PROVISIONING
-      # ---------------------------------
-      - name: Wait for ALB Provisioning
-        run: |
-          for ns in $NAMESPACES; do
-            echo "Waiting for ALB in namespace $ns"
-
-            for i in {1..30}; do
-              HOST=$(kubectl get ingress -n $ns \
-                -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
-
-              if [ -n "$HOST" ]; then
-                echo "ALB Hostname: $HOST"
-                break
-              fi
-
-              echo "Waiting for ALB hostname..."
-              sleep 10
-            done
-
-            if [ -z "$HOST" ]; then
-              echo "❌ ALB hostname not created in $ns"
-              exit 1
-            fi
-
-            ALB_ARN=$(aws elbv2 describe-load-balancers \
-              --query "LoadBalancers[?DNSName=='$HOST'].LoadBalancerArn" \
-              --output text)
-
-            for i in {1..30}; do
-              STATE=$(aws elbv2 describe-load-balancers \
-                --load-balancer-arns $ALB_ARN \
-                --query "LoadBalancers[0].State.Code" \
-                --output text)
-
-              if [ "$STATE" = "active" ]; then
-                echo "ALB is ACTIVE in $ns"
-                break
-              fi
-
-              echo "ALB still provisioning..."
-              sleep 10
-            done
-
-          done
-
-      # ---------------------------------
-      # BACKEND BLUE-GREEN
-      # ---------------------------------
-      - name: Backend Blue-Green Deployment
-        if: env.DEPLOY_BACKEND == 'true'
+      - name: Deploy Application
         run: |
           for ns in $NAMESPACES; do
 
-            ACTIVE_COLOR=$(kubectl get svc backend-service -n $ns \
-              -o jsonpath='{.spec.selector.color}')
+            echo "========== Processing $ns =========="
 
-            if [ "$ACTIVE_COLOR" = "blue" ]; then
-              TARGET_COLOR="green"
-            else
-              TARGET_COLOR="blue"
-            fi
+            if ! kubectl get deployment backend-blue -n $ns >/dev/null 2>&1; then
+              echo "First time deployment in $ns"
 
-            echo "Namespace: $ns | Active: $ACTIVE_COLOR → Deploying: $TARGET_COLOR"
+              # Apply everything
+              kubectl apply -f k8s/backend/blue.yaml -n $ns
+              kubectl apply -f k8s/backend/green.yaml -n $ns
+              kubectl apply -f k8s/backend/service.yaml -n $ns
 
-            kubectl set image deployment/backend-$TARGET_COLOR \
-              backend=$BACKEND_IMAGE -n $ns
+              kubectl apply -f k8s/frontend/canary-v1.yaml -n $ns
+              kubectl apply -f k8s/frontend/canary-v2.yaml -n $ns
+              kubectl apply -f k8s/frontend/service-clusterip.yaml -n $ns
 
-            kubectl rollout status deployment/backend-$TARGET_COLOR -n $ns --timeout=180s
+              kubectl apply -f k8s/ingress/$ns.yaml -n $ns
 
-            kubectl patch svc backend-service -n $ns \
-              -p "{\"spec\":{\"selector\":{\"app\":\"backend\",\"color\":\"$TARGET_COLOR\"}}}"
+              echo "Waiting for pods to be ready..."
+              kubectl rollout status deployment/backend-blue -n $ns --timeout=180s
+              kubectl rollout status deployment/frontend-v1 -n $ns --timeout=180s
 
-            kubectl scale deployment backend-$ACTIVE_COLOR --replicas=0 -n $ns
-
-          done
-
-      # ---------------------------------
-      # FRONTEND CANARY
-      # ---------------------------------
-      - name: Frontend Canary Deployment
-        if: env.DEPLOY_FRONTEND == 'true'
-        run: |
-          for ns in $NAMESPACES; do
-
-            echo "Deploying frontend canary in $ns"
-
-            kubectl set image deployment/frontend-v2 \
-              frontend=$FRONTEND_IMAGE -n $ns
-
-            kubectl rollout status deployment/frontend-v2 -n $ns --timeout=180s
-
-            kubectl scale deployment frontend-v2 --replicas=1 -n $ns
-            sleep 20
-
-            kubectl scale deployment frontend-v2 --replicas=2 -n $ns
-            kubectl scale deployment frontend-v1 --replicas=2 -n $ns
-            sleep 20
-
-            kubectl scale deployment frontend-v2 --replicas=3 -n $ns
-            kubectl scale deployment frontend-v1 --replicas=0 -n $ns
-
-            echo "Frontend promoted in $ns"
-
-          done
-
-      # ---------------------------------
-      # VERIFY TARGET GROUP HEALTH
-      # ---------------------------------
-      - name: Verify Target Group Health
-        run: |
-          for ns in $NAMESPACES; do
-
-            HOST=$(kubectl get ingress -n $ns \
-              -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
-
-            ALB_ARN=$(aws elbv2 describe-load-balancers \
-              --query "LoadBalancers[?DNSName=='$HOST'].LoadBalancerArn" \
-              --output text)
-
-            TG_ARNS=$(aws elbv2 describe-target-groups \
-              --load-balancer-arn $ALB_ARN \
-              --query "TargetGroups[*].TargetGroupArn" \
-              --output text)
-
-            for tg in $TG_ARNS; do
-              echo "Checking target group: $tg"
-
-              for i in {1..20}; do
-                HEALTH=$(aws elbv2 describe-target-health \
-                  --target-group-arn $tg \
-                  --query "TargetHealthDescriptions[*].TargetHealth.State" \
-                  --output text)
-
-                if [[ "$HEALTH" == *"healthy"* ]]; then
-                  echo "Targets healthy"
-                  break
-                fi
-
-                echo "Waiting for targets..."
+              echo "Waiting for ALB..."
+              for i in {1..30}; do
+                HOST=$(kubectl get ingress -n $ns \
+                  -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+                [ -n "$HOST" ] && break
                 sleep 10
               done
-            done
 
-          done
+              echo "ALB Hostname: $HOST"
 
-      # ---------------------------------
-      # FINAL STATUS
-      # ---------------------------------
-      - name: Final Status
-        run: |
-          for ns in $NAMESPACES; do
-            echo "====== $ns ======"
+            else
+              echo "Existing deployment detected in $ns"
+
+              # ---------------- BACKEND ----------------
+              if [ "$DEPLOY_BACKEND" = "true" ]; then
+
+                ACTIVE_COLOR=$(kubectl get svc backend-service -n $ns \
+                  -o jsonpath='{.spec.selector.color}')
+
+                if [ "$ACTIVE_COLOR" = "blue" ]; then
+                  TARGET_COLOR="green"
+                else
+                  TARGET_COLOR="blue"
+                fi
+
+                echo "$ns backend: $ACTIVE_COLOR → $TARGET_COLOR"
+
+                kubectl set image deployment/backend-$TARGET_COLOR \
+                  backend=$BACKEND_IMAGE -n $ns
+
+                kubectl rollout status deployment/backend-$TARGET_COLOR -n $ns --timeout=180s
+
+                kubectl patch svc backend-service -n $ns \
+                  -p "{\"spec\":{\"selector\":{\"app\":\"backend\",\"color\":\"$TARGET_COLOR\"}}}"
+
+                kubectl scale deployment backend-$ACTIVE_COLOR --replicas=0 -n $ns
+              fi
+
+              # ---------------- FRONTEND ----------------
+              if [ "$DEPLOY_FRONTEND" = "true" ]; then
+
+                echo "$ns frontend canary deployment"
+
+                kubectl set image deployment/frontend-v2 \
+                  frontend=$FRONTEND_IMAGE -n $ns
+
+                kubectl rollout status deployment/frontend-v2 -n $ns --timeout=180s
+
+                kubectl scale deployment frontend-v2 --replicas=1 -n $ns
+                sleep 20
+
+                kubectl scale deployment frontend-v2 --replicas=2 -n $ns
+                kubectl scale deployment frontend-v1 --replicas=2 -n $ns
+                sleep 20
+
+                kubectl scale deployment frontend-v2 --replicas=3 -n $ns
+                kubectl scale deployment frontend-v1 --replicas=0 -n $ns
+              fi
+
+            fi
+
+            echo "Verifying services in $ns"
             kubectl get pods -n $ns
             kubectl get svc -n $ns
             kubectl get ingress -n $ns
+
           done
