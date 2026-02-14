@@ -138,44 +138,76 @@ jobs:
       - name: Verify ALB & Target Group Health (Dev & Stage)
         run: |
           for ns in $NAMESPACES; do
-            HOST=$(kubectl get ingress -n $ns -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
-
+          
+            echo "Checking ALB for $ns"
+          
+            HOST=$(kubectl get ingress -n $ns \
+              -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+          
             if [ -z "$HOST" ]; then
               echo "❌ No ALB hostname found in $ns"
               exit 1
             fi
-
+          
+            echo "ALB Hostname: $HOST"
+          
             ALB_ARN=$(aws elbv2 describe-load-balancers \
               --query "LoadBalancers[?DNSName=='$HOST'].LoadBalancerArn" \
               --output text)
-
-            STATE=$(aws elbv2 describe-load-balancers \
-              --load-balancer-arns $ALB_ARN \
-              --query "LoadBalancers[0].State.Code" \
-              --output text)
-
+          
+            echo "Waiting for ALB to become active..."
+          
+            for i in {1..30}; do
+              STATE=$(aws elbv2 describe-load-balancers \
+                --load-balancer-arns $ALB_ARN \
+                --query "LoadBalancers[0].State.Code" \
+                --output text)
+          
+              if [ "$STATE" = "active" ]; then
+                echo "ALB is active in $ns"
+                break
+              fi
+          
+              echo "ALB state: $STATE — waiting..."
+              sleep 10
+            done
+          
             if [ "$STATE" != "active" ]; then
-              echo "❌ ALB not active in $ns"
+              echo "❌ ALB did not become active in $ns"
               exit 1
             fi
-
+          
+            echo "Checking target group health..."
+          
             TG_ARNS=$(aws elbv2 describe-target-groups \
               --load-balancer-arn $ALB_ARN \
               --query "TargetGroups[*].TargetGroupArn" \
               --output text)
-
+          
             for tg in $TG_ARNS; do
-              HEALTH=$(aws elbv2 describe-target-health \
-                --target-group-arn $tg \
-                --query "TargetHealthDescriptions[*].TargetHealth.State" \
-                --output text)
-
+              for i in {1..20}; do
+                HEALTH=$(aws elbv2 describe-target-health \
+                  --target-group-arn $tg \
+                  --query "TargetHealthDescriptions[*].TargetHealth.State" \
+                  --output text)
+          
+                if [[ "$HEALTH" == *"healthy"* ]]; then
+                  echo "Target group healthy"
+                  break
+                fi
+          
+                echo "Waiting for targets to become healthy..."
+                sleep 10
+              done
+          
               if [[ "$HEALTH" != *"healthy"* ]]; then
                 echo "❌ Target group unhealthy in $ns"
                 exit 1
               fi
             done
+          
           done
+
 
 
   # =====================================================
@@ -273,17 +305,68 @@ jobs:
           
           echo "All prod pods Ready"
 
-          HOST=$(kubectl get ingress -n prod -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+          echo "Checking ALB in prod..."
+          
+          HOST=$(kubectl get ingress -n prod \
+            -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+          
+          if [ -z "$HOST" ]; then
+            echo "❌ No ALB hostname found in prod"
+            exit 1
+          fi
+          
+          echo "ALB Hostname: $HOST"
+          
           ALB_ARN=$(aws elbv2 describe-load-balancers \
             --query "LoadBalancers[?DNSName=='$HOST'].LoadBalancerArn" \
             --output text)
-
-          STATE=$(aws elbv2 describe-load-balancers \
-            --load-balancer-arns $ALB_ARN \
-            --query "LoadBalancers[0].State.Code" \
-            --output text)
-
+          
+          echo "Waiting for ALB to become active..."
+          
+          for i in {1..30}; do
+            STATE=$(aws elbv2 describe-load-balancers \
+              --load-balancer-arns $ALB_ARN \
+              --query "LoadBalancers[0].State.Code" \
+              --output text)
+          
+            if [ "$STATE" = "active" ]; then
+              echo "ALB is active in prod"
+              break
+            fi
+          
+            echo "Current ALB state: $STATE — waiting..."
+            sleep 10
+          done
+          
           if [ "$STATE" != "active" ]; then
-            echo "❌ ALB not active in prod"
+            echo "❌ ALB did not become active in prod"
             exit 1
           fi
+          echo "Checking target group health..."
+          
+          TG_ARNS=$(aws elbv2 describe-target-groups \
+            --load-balancer-arn $ALB_ARN \
+            --query "TargetGroups[*].TargetGroupArn" \
+            --output text)
+          
+          for tg in $TG_ARNS; do
+            for i in {1..20}; do
+              HEALTH=$(aws elbv2 describe-target-health \
+                --target-group-arn $tg \
+                --query "TargetHealthDescriptions[*].TargetHealth.State" \
+                --output text)
+          
+              if [[ "$HEALTH" == *"healthy"* ]]; then
+                echo "Target group healthy"
+                break
+              fi
+          
+              echo "Waiting for targets to become healthy..."
+              sleep 10
+            done
+          
+            if [[ "$HEALTH" != *"healthy"* ]]; then
+              echo "❌ Target group unhealthy in prod"
+              exit 1
+            fi
+          done
