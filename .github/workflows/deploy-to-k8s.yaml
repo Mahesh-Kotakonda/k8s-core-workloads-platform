@@ -115,20 +115,24 @@ jobs:
       - name: Verify Cluster Health (Dev & Stage)
         run: |
           kubectl get nodes
-
+      
           NOT_READY=$(kubectl get nodes --no-headers | awk '$2 != "Ready" {print $1}')
           if [ -n "$NOT_READY" ]; then
             echo "❌ Nodes not ready"
             exit 1
           fi
-
+      
           for ns in $NAMESPACES; do
-            kubectl get pods -n $ns
-            if kubectl get pods -n $ns | grep -v Running | grep -v Completed; then
-              echo "❌ Some pods not healthy in $ns"
-              exit 1
-            fi
+            echo "Waiting for pods in $ns to become Ready..."
+      
+            kubectl wait --for=condition=Ready pod \
+              --all \
+              --namespace=$ns \
+              --timeout=180s || exit 1
+      
+            echo "All pods Ready in $ns"
           done
+
 
       # ---------------- ALB HEALTH ----------------
       - name: Verify ALB & Target Group Health (Dev & Stage)
@@ -253,7 +257,21 @@ jobs:
       - name: Verify Prod Cluster & ALB
         run: |
           kubectl get nodes
-          kubectl get pods -n prod
+          
+          NOT_READY=$(kubectl get nodes --no-headers | awk '$2 != "Ready" {print $1}')
+          if [ -n "$NOT_READY" ]; then
+            echo "❌ Nodes not ready"
+            exit 1
+          fi
+          
+          echo "Waiting for prod pods to become Ready..."
+          
+          kubectl wait --for=condition=Ready pod \
+            --all \
+            --namespace=prod \
+            --timeout=180s || exit 1
+          
+          echo "All prod pods Ready"
 
           HOST=$(kubectl get ingress -n prod -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
           ALB_ARN=$(aws elbv2 describe-load-balancers \
