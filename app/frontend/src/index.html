@@ -2,6 +2,24 @@
 <html>
 <head>
   <title>Kubernetes Core Workloads Demo</title>
+
+  <!-- PREFIX DETECTION FIX -->
+  <script>
+    (function () {
+      var path = window.location.pathname;
+      var match = path.match(/^\/(dev|stage|prod)(\/|$)/);
+
+      if (match) {
+        // If accessing through Ingress (e.g. /dev, /stage, /prod)
+        var base = "/" + match[1] + "/";
+        document.write('<base href="' + base + '">');
+      } else {
+        // If accessing through LoadBalancer root
+        document.write('<base href="/">');
+      }
+    })();
+  </script>
+
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -35,14 +53,13 @@
   <pre id="message">Loading...</pre>
 </div>
 
-<!-- IMPORTANT: Use relative path -->
+<!-- KEEP RELATIVE PATH -->
 <script src="./env.js"></script>
 
 <script>
-  document.getElementById("env").innerText = ENVIRONMENT;
-  document.getElementById("frontend").innerText = FRONTEND_VERSION;
+  document.getElementById("env").innerText = typeof ENVIRONMENT !== "undefined" ? ENVIRONMENT : "unknown";
+  document.getElementById("frontend").innerText = typeof FRONTEND_VERSION !== "undefined" ? FRONTEND_VERSION : "unknown";
 
-  // IMPORTANT: no leading slash
   fetch("api/message")
     .then(response => response.json())
     .then(data => {
